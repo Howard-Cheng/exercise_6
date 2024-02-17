@@ -5,51 +5,195 @@ const LOGIN = document.querySelector(".login");
 const ROOM = document.querySelector(".room");
 
 // Custom validation on the password reset fields
-const passwordField = document.querySelector(".profile input[name=password]");
-const repeatPasswordField = document.querySelector(".profile input[name=repeatPassword]");
-const repeatPasswordMatches = () => {
-  const p = document.querySelector(".profile input[name=password]").value;
-  const r = repeatPassword.value;
-  return p == r;
-};
-
-const checkPasswordRepeat = () => {
-  const passwordField = document.querySelector(".profile input[name=password]");
-  if(passwordField.value == repeatPasswordField.value) {
-    repeatPasswordField.setCustomValidity("");
-    return;
-  } else {
-    repeatPasswordField.setCustomValidity("Password doesn't match");
-  }
-}
+const passwordField = document.querySelector(".profile input[name='password']");
+const repeatPasswordField = document.querySelector(".profile input[name='repeatPassword']");
 
 passwordField.addEventListener("input", checkPasswordRepeat);
 repeatPasswordField.addEventListener("input", checkPasswordRepeat);
 
-// TODO:  On page load, read the path and whether the user has valid credentials:
-//        - If they ask for the splash page ("/"), display it
-//        - If they ask for the login page ("/login") and don't have credentials, display it
-//        - If they ask for the login page ("/login") and have credentials, send them to "/"
-//        - If they ask for any other valid page ("/profile" or "/room") and do have credentials,
-//          show it to them
-//        - If they ask for any other valid page ("/profile" or "/room") and don't have
-//          credentials, send them to "/login", but remember where they were trying to go. If they
-//          login successfully, send them to their original destination
-//        - Hide all other pages
+function checkPasswordRepeat() {
+    if (passwordField.value === repeatPasswordField.value) {
+        repeatPasswordField.setCustomValidity("");
+    } else {
+        repeatPasswordField.setCustomValidity("Passwords don't match");
+    }
+}
 
-// TODO:  When displaying a page, update the DOM to show the appropriate content for any element
-//        that currently contains a {{ }} placeholder. You do not have to parse variable names out
-//        of the curly  braces—they are for illustration only. You can just replace the contents
-//        of the parent element (and in fact can remove the {{}} from index.html if you want).
+// Page load handler
+document.addEventListener("DOMContentLoaded", function () {
+    navigateBasedOnURL();
+    setupEventListeners();
+});
 
-// TODO:  Handle clicks on the UI elements.
-//        - Send API requests with fetch where appropriate.
-//        - Parse the results and update the page.
-//        - When the user goes to a new "page" ("/", "/login", "/profile", or "/room"), push it to
-//          History
+function navigateBasedOnURL() {
+    const path = window.location.pathname;
+    const isAuthenticated = localStorage.getItem("apiKey") !== null;
 
-// TODO:  When a user enters a room, start a process that queries for new chat messages every 0.1
-//        seconds. When the user leaves the room, cancel that process.
-//        (Hint: https://developer.mozilla.org/en-US/docs/Web/API/setInterval#return_value)
+    hideAllPages();
 
-// On page load, show the appropriate page and hide the others
+    if (path === "/" || path === "/splash") {
+        SPLASH.style.display = isAuthenticated ? "none" : "block";
+        if (isAuthenticated) navigateTo("/profile");
+    } else if (path === "/login") {
+        LOGIN.style.display = isAuthenticated ? "none" : "block";
+    } else if (path.startsWith("/profile") && isAuthenticated) {
+        PROFILE.style.display = "block";
+    } else if (path.startsWith("/room") && isAuthenticated) {
+        ROOM.style.display = "block";
+        const roomId = path.split("/")[2]; // Assuming path format is "/room/{roomId}"
+        startPollingForMessages(roomId);
+    } else {
+        navigateTo("/login");
+    }
+}
+
+function hideAllPages() {
+    SPLASH.style.display = "none";
+    PROFILE.style.display = "none";
+    LOGIN.style.display = "none";
+    ROOM.style.display = "none";
+}
+
+function navigateTo(page) {
+    history.pushState({}, "", page);
+    navigateBasedOnURL();
+}
+
+// Handling clicks on UI elements
+function setupEventListeners() {
+    // Example: Logout button
+    document.querySelector(".logout").addEventListener("click", function () {
+        localStorage.removeItem("apiKey");
+        navigateTo("/login");
+    });
+
+    // Add more event listeners for login, signup, room creation, etc.
+}
+
+// Handling login
+function loginUser(username, password) {
+    fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.api_key) {
+                localStorage.setItem("apiKey", data.api_key);
+                navigateTo("/profile");
+            } else {
+                alert("Login failed");
+            }
+        });
+}
+
+// Handling signup
+function signupUser(username, password) {
+    fetch("/api/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.api_key) {
+                localStorage.setItem("apiKey", data.api_key);
+                navigateTo("/profile");
+            } else {
+                alert("Signup failed");
+            }
+        });
+}
+
+// Start polling for new messages in a room
+let pollingInterval;
+
+function startPollingForMessages(roomId) {
+    stopPollingForMessages(); // Ensure any existing polling is stopped first
+
+    pollingInterval = setInterval(() => {
+        fetch(`/api/room/${roomId}/messages`, {
+            headers: { Authorization: localStorage.getItem("apiKey") },
+        })
+            .then((response) => response.json())
+            .then((messages) => {
+                // Update the ROOM with new messages
+                // Implement message display logic here
+            });
+    }, 500); // Poll every 0.5 seconds
+}
+
+function stopPollingForMessages() {
+    if (pollingInterval) clearInterval(pollingInterval);
+}
+
+function createRoom() {
+    const roomName = prompt("Enter the new room name:");
+    if (!roomName) return; // Exit if no name is entered
+
+    fetch("/api/room/create", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: localStorage.getItem("apiKey"),
+        },
+        body: JSON.stringify({ name: roomName }),
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.success) {
+                alert("Room created successfully");
+                navigateTo("/room/" + data.roomId); // Adjust based on your API response
+            } else {
+                alert("Failed to create room");
+            }
+        });
+}
+
+function renameRoom(roomId) {
+    const newName = prompt("Enter the new room name:");
+    if (!newName) return; // Exit if no new name is entered
+
+    fetch(`/api/room/${roomId}/rename`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: localStorage.getItem("apiKey"),
+        },
+        body: JSON.stringify({ newName }),
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.success) {
+                alert("Room renamed successfully");
+                navigateTo("/room/" + roomId); // Refresh the room
+            } else {
+                alert("Failed to rename room");
+            }
+        });
+}
+
+function postMessage(roomId) {
+    const messageContent = document.querySelector("#messageInput").value; // Adjust selector as needed
+    if (!messageContent) return; // Exit if no message content
+
+    fetch(`/api/room/${roomId}/message`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: localStorage.getItem("apiKey"),
+        },
+        body: JSON.stringify({ message: messageContent }),
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.success) {
+                alert("Message posted successfully");
+                document.querySelector("#messageInput").value = ""; // Clear the input field
+                startPollingForMessages(roomId); // Optionally refresh messages immediately
+            } else {
+                alert("Failed to post message");
+            }
+        });
+}
